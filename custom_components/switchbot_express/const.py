@@ -1,0 +1,83 @@
+"""Constants for SwitchBot Express."""
+
+from __future__ import annotations
+
+from homeassistant.const import Platform
+
+from .policy import (
+    CONF_CONNECT_TIMEOUT,
+    CONF_HOLD_CONNECTION,
+    CONF_LINGER_SECONDS,
+    CONF_LOW_BATTERY_PERCENT,
+    CONF_PREWARM_SECONDS,
+    CONF_RETRY_COUNT,
+    DEFAULT_CONNECT_TIMEOUT,
+    DEFAULT_HOLD_CONNECTION,
+    DEFAULT_LINGER_SECONDS,
+    DEFAULT_LOW_BATTERY_PERCENT,
+    DEFAULT_PREWARM_SECONDS,
+    DEFAULT_RETRY_COUNT,
+    MAX_CONNECT_TIMEOUT,
+    MAX_LINGER_SECONDS,
+    MAX_LOW_BATTERY_PERCENT,
+    MAX_PREWARM_SECONDS,
+    MAX_RETRY_COUNT,
+    MIN_CONNECT_TIMEOUT,
+    MIN_LINGER_SECONDS,
+    MIN_LOW_BATTERY_PERCENT,
+    MIN_PREWARM_SECONDS,
+    MIN_RETRY_COUNT,
+)
+
+__all__ = [
+    "CONF_CONNECT_TIMEOUT",
+    "CONF_DEVICE_TYPE",
+    "CONF_HOLD_CONNECTION",
+    "CONF_LINGER_SECONDS",
+    "CONF_LOW_BATTERY_PERCENT",
+    "CONF_PREWARM_SECONDS",
+    "CONF_RETRY_COUNT",
+    "DEFAULT_CONNECT_TIMEOUT",
+    "DEFAULT_CURTAIN_SPEED",
+    "DEFAULT_HOLD_CONNECTION",
+    "DEFAULT_LINGER_SECONDS",
+    "DEFAULT_LOW_BATTERY_PERCENT",
+    "DEFAULT_PREWARM_SECONDS",
+    "DEFAULT_RETRY_COUNT",
+    "DOMAIN",
+    "ISSUE_LOW_BATTERY",
+    "MANUFACTURER",
+    "MAX_CONNECT_TIMEOUT",
+    "MAX_LINGER_SECONDS",
+    "MAX_LOW_BATTERY_PERCENT",
+    "MAX_PREWARM_SECONDS",
+    "MAX_RETRY_COUNT",
+    "MIN_CONNECT_TIMEOUT",
+    "MIN_LINGER_SECONDS",
+    "MIN_LOW_BATTERY_PERCENT",
+    "MIN_PREWARM_SECONDS",
+    "MIN_RETRY_COUNT",
+    "PLATFORMS_BY_TYPE",
+    "SERVICE_PREWARM",
+    "STATE_DISCONNECTED",
+]
+
+DOMAIN = "switchbot_express"
+MANUFACTURER = "SwitchBot"
+
+# Entry data keys. CONF_ADDRESS and CONF_NAME come from homeassistant.const.
+CONF_DEVICE_TYPE = "device_type"
+
+SERVICE_PREWARM = "prewarm"
+
+ISSUE_LOW_BATTERY = "low_battery"
+
+# The Connection sensor's state when nothing holds a link to the device.
+STATE_DISCONNECTED = "disconnected"
+
+# pySwitchbot's "normal" curtain speed; 1 is the slow, quiet mode.
+DEFAULT_CURTAIN_SPEED = 255
+
+PLATFORMS_BY_TYPE: dict[str, list[Platform]] = {
+    "curtain": [Platform.BINARY_SENSOR, Platform.COVER, Platform.SENSOR],
+}

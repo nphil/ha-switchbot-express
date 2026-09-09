@@ -1,0 +1,37 @@
+{
+  "domain": "switchbot_express",
+  "name": "SwitchBot Express",
+  "bluetooth": [
+    {
+      "connectable": true,
+      "service_data_uuid": "00000d00-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_data_uuid": "0000fd3d-0000-1000-8000-00805f9b34fb"
+    },
+    {
+      "connectable": true,
+      "service_uuid": "cba20d00-224d-11e6-9fb8-0002a5d5c51b"
+    },
+    {
+      "connectable": true,
+      "manufacturer_id": 2409
+    }
+  ],
+  "codeowners": ["@nphil"],
+  "config_flow": true,
+  "dependencies": ["bluetooth_adapters"],
+  "documentation": "https://github.com/nphil/ha-switchbot-express",
+  "integration_type": "device",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/nphil/ha-switchbot-express/issues",
+  "loggers": [
+    "custom_components.switchbot_express",
+    "switchbot",
+    "bleak_retry_connector",
+    "habluetooth"
+  ],
+  "requirements": ["PySwitchbot==2.4.1"],
+  "version": "1.0.0"
+}

@@ -1,0 +1,92 @@
+{
+  "config": {
+    "flow_title": "{name} ({address})",
+    "step": {
+      "user": {
+        "title": "Choose a SwitchBot",
+        "description": "Pick the device to control.",
+        "data": {
+          "address": "Device"
+        }
+      },
+      "confirm": {
+        "title": "Add {name}",
+        "description": "Name this device. Entity IDs are derived from this name, so to take over from the core SwitchBot integration without renaming anything, type the name the device has there today.",
+        "data": {
+          "name": "Name"
+        }
+      }
+    },
+    "abort": {
+      "already_configured": "This device is already set up.",
+      "no_devices_found": "No supported SwitchBot found in range of a Bluetooth proxy or adapter that can make connections.",
+      "not_supported": "This SwitchBot model is not supported by SwitchBot Express.",
+      "not_connectable": "This SwitchBot was only seen by a listen-only scanner. It has to be in range of a proxy or adapter that can make connections."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Connection policy",
+        "description": "A connected SwitchBot keeps its radio awake for connection events, which costs battery. These defaults only keep the link across a burst of adjustments; to make a scheduled command instant, call the prewarm action 30-60 seconds ahead instead of holding the link.",
+        "data": {
+          "linger_seconds": "Keep the connection after a command",
+          "hold_connection": "Hold connection (solar or mains powered units only)",
+          "prewarm_seconds": "Prewarm duration",
+          "low_battery_percent": "Low battery threshold",
+          "retry_count": "Command retries",
+          "connect_timeout": "Connect attempt timeout"
+        },
+        "data_description": {
+          "linger_seconds": "Seconds to keep the link open after a command you issued, reset by each new command. Polls and read-backs never extend it. 0 behaves like the core integration.",
+          "hold_connection": "Keep a connection open permanently. This is only sensible for a solar or mains powered unit: on batteries it will drain them. It is suspended automatically below the low battery threshold.",
+          "prewarm_seconds": "How long the prewarm action keeps the link open. Call it from the same automation that is about to move the device, 30-60 seconds ahead.",
+          "low_battery_percent": "At or below this level, linger and hold are suspended to protect the battery, and a repair is raised. Prewarm still works.",
+          "retry_count": "How many times pySwitchbot retries a failed command. Each retry reconnects, and Home Assistant re-scores the proxies for it.",
+          "connect_timeout": "Hard cap on a single connect attempt. Lower means a bad proxy path fails fast and the retry can pick another proxy."
+        }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "calibration": {
+        "name": "Calibration"
+      }
+    },
+    "sensor": {
+      "battery": {
+        "name": "Battery"
+      },
+      "light_level": {
+        "name": "Light level"
+      },
+      "connection": {
+        "name": "Connection"
+      }
+    }
+  },
+  "services": {
+    "prewarm": {
+      "name": "Prewarm",
+      "description": "Connects to the device now and keeps the link open for the prewarm duration, so the next command runs without waiting for a connection."
+    }
+  },
+  "issues": {
+    "low_battery": {
+      "title": "{name} battery is low",
+      "description": "{name} is at {battery}%, at or below the {threshold}% low battery threshold. Keeping the connection open (linger and hold) is suspended until it recovers, so commands will pay a connection again. The prewarm action still works. Charge or replace the battery, or lower the threshold in the integration options."
+    }
+  },
+  "exceptions": {
+    "operation_error": {
+      "message": "The SwitchBot rejected the command: {error}"
+    },
+    "device_not_found": {
+      "message": "Could not find a SwitchBot at {address} through a Bluetooth proxy or adapter that can make connections."
+    },
+    "not_advertising": {
+      "message": "The SwitchBot at {address} is not advertising."
+    }
+  }
+}
