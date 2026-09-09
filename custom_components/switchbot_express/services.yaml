@@ -4,5 +4,3 @@ prewarm:
       integration: switchbot_express
       domain:
         - cover
-    device:
-      integration: switchbot_express
