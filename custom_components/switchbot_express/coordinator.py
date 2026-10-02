@@ -29,6 +29,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, CoreState, HomeAssistant, callback
 from homeassistant.helpers import issue_registry as ir
 
+from . import shutdown
 from .const import DOMAIN, ISSUE_LOW_BATTERY
 from .device import ExpressConnectionMixin
 from .policy import ConnectionPolicy
@@ -139,6 +140,8 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         Bounded, never raises, and deliberately does not unload the entry (that
         would write a wave of ``unavailable`` states).
         """
+        shutdown.begin(self.hass)
+        self.device.latch_closing()
         started = time.monotonic()
         try:
             async with asyncio.timeout(SHUTDOWN_RELEASE_TIMEOUT):
@@ -178,6 +181,7 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         # a way to connect to the device.
         return (
             self.hass.state is CoreState.running
+            and not shutdown.in_progress(self.hass)
             and not self.device.closing
             and self.device.poll_needed(seconds_since_last_poll)
             and bool(

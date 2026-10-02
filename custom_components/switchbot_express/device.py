@@ -87,6 +87,16 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         """Return True once Home Assistant's shutdown has latched the link closed."""
         return self._closing
 
+    def latch_closing(self) -> None:
+        """Refuse every future connect and wake the supervisor so it exits. One-way.
+
+        Synchronous so the domain-wide shutdown job can latch every device at once; the link
+        itself is dropped by ``async_release_for_shutdown``.
+        """
+        self._closing = True
+        self._hold_wanted.set()  # wakes a supervisor parked while not holding; it sees the latch and exits
+        self._link_lost.set()
+
     @property
     def is_connected(self) -> bool:
         """Return True while a GATT link to the device is up."""
@@ -165,7 +175,13 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
             raise SwitchbotOperationError(_CLOSING_MESSAGE)
 
     def _disconnected(self, client: Any) -> None:
-        """Record unexpected drops on top of upstream's handling."""
+        """Record unexpected drops on top of upstream's handling.
+
+        Once the shutdown latch is set every disconnect is deliberate (ours, or the proxy going
+        down with Home Assistant): not a fault, so it is neither counted nor warned about.
+        """
+        if self._closing:
+            self._expected_disconnect = True
         unexpected = not self._expected_disconnect
         super()._disconnected(client)
         if not unexpected:

@@ -92,7 +92,14 @@ class SwitchbotExpressEntity(
         on a platform is one line, so a future Bot or Plug Mini platform gets
         it for free (see ``cover.py``).
         """
-        await self.coordinator.async_prewarm()
+        try:
+            await self.coordinator.async_prewarm()
+        except SwitchbotOperationError as error:
+            raise HomeAssistantError(
+                translation_domain=DOMAIN,
+                translation_key="operation_error",
+                translation_placeholders={"error": str(error)},
+            ) from error
 
 
 _EntityT = TypeVar("_EntityT", bound=SwitchbotExpressEntity)

@@ -21,8 +21,11 @@ from homeassistant.components import bluetooth
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
 from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers.typing import ConfigType
 
+from . import shutdown
 from .const import CONF_DEVICE_TYPE, DOMAIN, ISSUE_LOW_BATTERY, PLATFORMS_BY_TYPE
 from .coordinator import SwitchbotExpressConfigEntry, SwitchbotExpressCoordinator
 from .device import SUPPORTED_TYPES, core_disconnect_delay, create_device
@@ -30,11 +33,41 @@ from .policy import ConnectionPolicy, PolicyOptions
 
 _LOGGER = logging.getLogger(__name__)
 
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
+
+
+async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
+    """Register the domain-wide shutdown latch, once per Home Assistant run.
+
+    Home Assistant reads its shutdown-job list once when the stage starts, so an entry that is
+    set up or reloaded during the stage registers its own job too late to ever run. This job is
+    registered here, is never removed with an entry, and latches everything: loaded devices are
+    told to refuse connects, and entry setup refuses to start (see ``_refuse_while_shutting_down``).
+    """
+    hass.async_add_shutdown_job(HassJob(_async_latch_for_shutdown, "switchbot_express shutdown latch"), hass)
+    return True
+
+
+async def _async_latch_for_shutdown(hass: HomeAssistant) -> None:
+    """Domain-wide latch: from now on nothing in this integration opens a Bluetooth link."""
+    shutdown.begin(hass)
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        coordinator = getattr(entry, "runtime_data", None)
+        if isinstance(coordinator, SwitchbotExpressCoordinator):
+            coordinator.device.latch_closing()
+
+
+def _refuse_while_shutting_down(hass: HomeAssistant) -> None:
+    """Entry setup/reload during Home Assistant's shutdown must not start anything."""
+    if shutdown.in_progress(hass):
+        raise ConfigEntryNotReady("Home Assistant is shutting down")
+
 
 async def async_setup_entry(
     hass: HomeAssistant, entry: SwitchbotExpressConfigEntry
 ) -> bool:
     """Set up a SwitchBot Express device from a config entry."""
+    _refuse_while_shutting_down(hass)
     address: str = entry.data[CONF_ADDRESS].upper()
     device_type: str = entry.data[CONF_DEVICE_TYPE]
     if device_type not in SUPPORTED_TYPES:
@@ -48,6 +81,7 @@ async def async_setup_entry(
     # Another integration (or a previous run) may still be holding this
     # device; a stale link would make every command here time out.
     await switchbot.close_stale_connections_by_address(address)
+    _refuse_while_shutting_down(hass)
 
     ble_device = bluetooth.async_ble_device_from_address(hass, address, True)
     if not ble_device:
@@ -88,6 +122,8 @@ async def async_setup_entry(
             translation_key="not_advertising",
             translation_placeholders={"address": address},
         )
+    # Shutdown may have begun while waiting for the first advertisement (up to 30 s).
+    _refuse_while_shutting_down(hass)
 
     coordinator.async_setup_link()
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
