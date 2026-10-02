@@ -19,7 +19,7 @@ import switchbot
 
 from homeassistant.components import bluetooth
 from homeassistant.const import CONF_ADDRESS, CONF_NAME
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HassJob, HomeAssistant
 from homeassistant.exceptions import ConfigEntryNotReady
 from homeassistant.helpers import issue_registry as ir
 
@@ -72,6 +72,14 @@ async def async_setup_entry(
         device_type=device_type,
         model=SUPPORTED_TYPES[device_type].model,
         config_entry=entry,
+    )
+    entry.async_on_unload(
+        hass.async_add_shutdown_job(
+            HassJob(
+                coordinator.async_release_at_shutdown,
+                f"switchbot_express release BLE link {entry.title}",
+            )
+        )
     )
     entry.async_on_unload(coordinator.async_start())
     if not await coordinator.async_wait_ready():

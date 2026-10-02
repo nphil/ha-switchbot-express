@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import time
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
@@ -35,6 +36,10 @@ from .policy import ConnectionPolicy
 _LOGGER = logging.getLogger(__name__)
 
 DEVICE_STARTUP_TIMEOUT = 30
+
+# Upper bound for the shutdown-time release. Home Assistant gives all shutdown
+# jobs one shared 20 s budget.
+SHUTDOWN_RELEASE_TIMEOUT = 8
 
 SwitchbotExpressConfigEntry = ConfigEntry["SwitchbotExpressCoordinator"]
 
@@ -126,6 +131,41 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
             self._supervisor_task = None
         await self.device.async_release()
 
+    async def async_release_at_shutdown(self) -> None:
+        """Home Assistant shutdown job (Stage 1, before Bluetooth and the proxies go away).
+
+        Stops the reconnect supervisor first so the deliberate disconnect is not
+        chased by a reconnect, latches the device closed and drops the link.
+        Bounded, never raises, and deliberately does not unload the entry (that
+        would write a wave of ``unavailable`` states).
+        """
+        started = time.monotonic()
+        try:
+            async with asyncio.timeout(SHUTDOWN_RELEASE_TIMEOUT):
+                if self._supervisor_task is not None:
+                    self._supervisor_task.cancel()
+                    await asyncio.wait([self._supervisor_task])
+                    self._supervisor_task = None
+                await self.device.async_release_for_shutdown()
+        except TimeoutError:
+            _LOGGER.warning(
+                "Timed out after %s s releasing the BLE link to %s at shutdown",
+                SHUTDOWN_RELEASE_TIMEOUT,
+                self.device_name,
+            )
+        except Exception as err:  # noqa: BLE001 - a shutdown job must never raise
+            _LOGGER.warning(
+                "Could not release the BLE link to %s at shutdown: %s",
+                self.device_name,
+                err,
+            )
+        else:
+            _LOGGER.info(
+                "Released BLE link to %s at shutdown in %.2f s",
+                self.device_name,
+                time.monotonic() - started,
+            )
+
     # -- advertisements and polling --------------------------------------
 
     @callback
@@ -138,6 +178,7 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         # a way to connect to the device.
         return (
             self.hass.state is CoreState.running
+            and not self.device.closing
             and self.device.poll_needed(seconds_since_last_poll)
             and bool(
                 bluetooth.async_ble_device_from_address(

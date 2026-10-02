@@ -47,12 +47,14 @@ from dataclasses import dataclass
 from typing import Any
 
 from bleak.backends.device import BLEDevice
-from switchbot import SwitchbotCurtain, SwitchbotModel
+from switchbot import SwitchbotCurtain, SwitchbotModel, SwitchbotOperationError
 from switchbot.devices.device import DISCONNECT_DELAY, SwitchbotBaseDevice
 
 from .policy import ConnectionPolicy, reconnect_delay
 
 _LOGGER = logging.getLogger(__name__)
+
+_CLOSING_MESSAGE = "Home Assistant is shutting down; not opening a Bluetooth link"
 
 
 class ExpressConnectionMixin(SwitchbotBaseDevice):
@@ -70,12 +72,20 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         self._reconnect_attempt = 0
         self._hold_wanted = asyncio.Event()
         self._link_lost = asyncio.Event()
+        # Set once by async_release_for_shutdown and never cleared: Home
+        # Assistant is going down, so this process must not open another link.
+        self._closing = False
         super().__init__(*args, **kwargs)
 
     @property
     def policy(self) -> ConnectionPolicy:
         """Return the policy governing this device's link."""
         return self._policy
+
+    @property
+    def closing(self) -> bool:
+        """Return True once Home Assistant's shutdown has latched the link closed."""
+        return self._closing
 
     @property
     def is_connected(self) -> bool:
@@ -134,6 +144,8 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         ``BLEAK_RETRY_EXCEPTIONS``, so pySwitchbot's retry loop makes the next
         attempt, and habluetooth picks the best proxy again for it.
         """
+        if self._closing:
+            raise SwitchbotOperationError(_CLOSING_MESSAGE)
         timeout = self._policy.options.connect_timeout
         try:
             async with asyncio.timeout(timeout):
@@ -147,6 +159,10 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
             )
             await self._execute_forced_disconnect()
             raise
+        if self._closing:
+            # Shutdown began while this connect was in flight: hand the link back.
+            await self._execute_forced_disconnect()
+            raise SwitchbotOperationError(_CLOSING_MESSAGE)
 
     def _disconnected(self, client: Any) -> None:
         """Record unexpected drops on top of upstream's handling."""
@@ -183,7 +199,7 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         """Re-apply the policy after the options or the battery changed."""
         if self.is_connected:
             self._reset_disconnect_timer()
-        if self._policy.hold_active:
+        if self._policy.hold_active and not self._closing:
             self._hold_wanted.set()
         else:
             self._hold_wanted.clear()
@@ -199,7 +215,7 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         proxies each time, so a device that drifted closer to another proxy
         roams onto it here without us choosing anything.
         """
-        while True:
+        while not self._closing:
             if not self._policy.hold_active:
                 self._set_reconnect_attempt(0)
                 await self._hold_wanted.wait()
@@ -235,6 +251,21 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         self._hold_wanted.clear()
         self._cancel_disconnect_timer()
         await self._execute_forced_disconnect()
+
+    async def async_release_for_shutdown(self) -> None:
+        """Latch the device closed, then drop the link. One-way, for Home Assistant shutdown.
+
+        The latch goes first so no connect path (command, poll, prewarm,
+        reconnect supervisor) can open a new link afterwards. The forced
+        disconnect waits for any connect already in flight (they share
+        pySwitchbot's connect lock); that connect armed its idle timer on
+        success, which makes pySwitchbot skip the disconnect, so a second pass
+        clears it when a link is still there.
+        """
+        self._closing = True
+        await self.async_release()
+        if self._client is not None:
+            await self.async_release()
 
 
 class SwitchbotExpressCurtain(ExpressConnectionMixin, SwitchbotCurtain):
