@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" width="256" height="256" role="img" aria-label="SwitchBot Express">
+  <title>SwitchBot Express</title>
+  <!-- Same geometry as tools/render_brand.py (light variant). -->
+  <rect width="256" height="256" rx="56" fill="#254BE8"/>
+  <g stroke="#FFFFFF" stroke-linecap="round" fill="none">
+    <!-- curtain rail -->
+    <line x1="48" y1="58" x2="200" y2="58" stroke-width="14"/>
+    <!-- three slanted curtain pleats, hems on one line -->
+    <line x1="166" y1="86" x2="138" y2="206" stroke-width="24"/>
+    <line x1="124" y1="86" x2="96" y2="206" stroke-width="24"/>
+    <line x1="82" y1="86" x2="54" y2="206" stroke-width="24"/>
+  </g>
+  <!-- the SwitchBot carrier -->
+  <rect x="152" y="36" width="68" height="46" rx="16" fill="#FFB82E"/>
+</svg>

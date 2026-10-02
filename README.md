@@ -199,8 +199,10 @@ pySwitchbot internals. Its module docstring lists every upstream method it
 overrides, wraps or relies on; check that list when bumping the pin in
 `manifest.json`.
 
-Brand images for HACS live in `custom_components/switchbot_express/brand/`
-(`icon.png`, `icon@2x.png`, `logo.png`, `logo@2x.png`).
+Brand images for HACS and the Home Assistant UI live in
+`custom_components/switchbot_express/brand/` (all eight PNGs: icon, logo, and
+their `dark_` and `@2x` variants). They are rendered from `icon.svg` by
+`python3 tools/render_brand.py` (Pillow only).
 
 ## Licence
 
