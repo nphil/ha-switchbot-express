@@ -32,7 +32,7 @@ async def async_setup_entry(
     """Set up the SwitchBot binary sensors."""
     coordinator = entry.runtime_data
     async_add_entities_as_data_arrives(
-        entry,
+        coordinator,
         async_add_entities,
         BINARY_SENSOR_TYPES,
         lambda key: SwitchbotExpressBinarySensor(coordinator, key),

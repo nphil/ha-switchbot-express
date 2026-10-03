@@ -131,6 +131,8 @@ async def async_setup_entry(
             )
         )
     )
+    # Closed again by unload before the platforms go (and here if setup fails).
+    entry.async_on_unload(coordinator.async_stop_discovery)
     entry.async_on_unload(coordinator.async_start())
     # Not hearing the device inside the budget is not a failure: the entities
     # stay unavailable and fill in when the first advertisement arrives, and the
@@ -157,6 +159,9 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry, releasing any link we were holding."""
     coordinator = entry.runtime_data
+    # First data arriving while the platforms unload must not add entities to
+    # a platform that is going away (they would duplicate after the reload).
+    coordinator.async_stop_discovery()
     unload_ok = await hass.config_entries.async_unload_platforms(
         entry, PLATFORMS_BY_TYPE[entry.data[CONF_DEVICE_TYPE]]
     )

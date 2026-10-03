@@ -85,6 +85,8 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._low_battery_issue = False
         self._supervisor_task: asyncio.Task[None] | None = None
         self._unsub_state: Callable[[], None] | None = None
+        self._discovery_open = True
+        self._discovery_unsubs: list[CALLBACK_TYPE] = []
 
     @property
     def policy(self) -> ConnectionPolicy:
@@ -105,6 +107,33 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
     def last_drop(self) -> datetime | None:
         """Return the last unexpected disconnect."""
         return self.policy.last_drop
+
+    # -- late entity discovery --------------------------------------------
+
+    @property
+    def discovery_open(self) -> bool:
+        """Whether new entities may still be added (closed for good once unloading starts)."""
+        return self._discovery_open
+
+    @callback
+    def async_add_discovery_listener(self, update_callback: CALLBACK_TYPE) -> None:
+        """Call ``update_callback`` on every advertisement and every poll result.
+
+        Used to add entities whose existence depends on data the device has not
+        sent yet. ``async_stop_discovery`` removes every such listener.
+        """
+        if not self._discovery_open:
+            return
+        self._discovery_unsubs.append(self.async_add_listener(update_callback))
+        self._discovery_unsubs.append(self.device.subscribe(update_callback))
+
+    @callback
+    def async_stop_discovery(self) -> None:
+        """Stop adding entities. One-way and idempotent; unload calls it before the platforms go."""
+        self._discovery_open = False
+        unsubs, self._discovery_unsubs = self._discovery_unsubs, []
+        for unsub in unsubs:
+            unsub()
 
     # -- setup and teardown ----------------------------------------------
 

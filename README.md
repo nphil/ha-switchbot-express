@@ -126,6 +126,11 @@ unavailable and fill in by themselves when it is; the battery, light level and
 calibration entities appear the first time the device advertises them. Nothing is
 moved when a device comes back.
 
+A stuck Bluetooth subscribe is ended by the proxy's own timeout (4 s a round trip)
+rather than cancelled from outside, and a disconnect that gets stuck is kept and
+finished on the next connect or at shutdown, so a link is never forgotten while
+it is still open.
+
 ### The Connection sensor
 
 Its state is the **name of the proxy or adapter currently holding a GATT link**

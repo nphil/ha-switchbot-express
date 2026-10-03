@@ -19,7 +19,7 @@ from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import DOMAIN, MANUFACTURER
-from .coordinator import SwitchbotExpressConfigEntry, SwitchbotExpressCoordinator
+from .coordinator import SwitchbotExpressCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -127,7 +127,7 @@ def exception_handler(
 
 @callback
 def async_add_entities_as_data_arrives(
-    entry: SwitchbotExpressConfigEntry,
+    coordinator: SwitchbotExpressCoordinator,
     async_add_entities: AddConfigEntryEntitiesCallback,
     keys: Collection[str],
     factory: Callable[[str], SwitchbotExpressEntity],
@@ -136,20 +136,24 @@ def async_add_entities_as_data_arrives(
 
     Which values a device advertises is only known after its first advertisement,
     and setup no longer waits for that. Entities for keys already known are added
-    at once; the rest are added the moment an advertisement or a poll brings them.
+    at once; the rest are added the moment an advertisement or a poll brings them,
+    until the coordinator closes discovery (unload starts).
     """
-    coordinator = entry.runtime_data
-    device = coordinator.device
     added: set[str] = set()
 
     @callback
     def _add_new() -> None:
-        new = [key for key in device.parsed_data if key in keys and key not in added]
+        if not coordinator.discovery_open:
+            return
+        new = [
+            key
+            for key in coordinator.device.parsed_data
+            if key in keys and key not in added
+        ]
         if not new:
             return
         added.update(new)
         async_add_entities([factory(key) for key in new])
 
     _add_new()
-    entry.async_on_unload(coordinator.async_add_listener(_add_new))
-    entry.async_on_unload(device.subscribe(_add_new))
+    coordinator.async_add_discovery_listener(_add_new)

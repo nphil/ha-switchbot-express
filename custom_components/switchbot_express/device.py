@@ -22,6 +22,17 @@ Upstream surface this file depends on -- pySwitchbot 2.4.1,
   timeout. Upstream's ``write_gatt_char`` has none, so a stuck write would hold
   the operation lock for as long as the proxy takes to give up. The resulting
   ``TimeoutError`` takes upstream's normal disconnect-and-retry path.
+* ``SwitchbotBaseDevice._start_notify`` -- OVERRIDDEN only to pass the backend a
+  ``timeout`` kwarg. bleak forwards it to the backend (bleak-esphome bounds each
+  proxy round-trip with it and unregisters its notify handler on failure; other
+  backends ignore it). Cancelling a subscribe from outside would abandon that
+  handler on the proxy, so while subscribing the outer connect guard is only a
+  safety net beyond the backend's own bound.
+* ``SwitchbotBaseDevice._execute_disconnect_with_lock`` -- WRAPPED. Upstream
+  clears ``_client`` before it awaits ``client.disconnect()``, so a cancelled
+  disconnect would lose the only handle to a still-open link. We keep that
+  client as ``_pending_disconnect`` until the disconnect is confirmed, and
+  every release/connect path finishes it first.
 * ``SwitchbotBaseDevice._disconnected`` -- EXTENDED. Upstream logs and cancels
   the timer; we additionally record unexpected drops and wake the supervisor.
   We read ``_expected_disconnect`` before delegating because upstream does not
@@ -36,15 +47,16 @@ Upstream surface this file depends on -- pySwitchbot 2.4.1,
   method keeps its ``@update_after_operation`` read-back.
 
 Untouched and relied upon as-is: ``_disconnect_from_timer``,
-``_execute_timed_disconnect``, ``_execute_disconnect``,
-``_execute_disconnect_with_lock`` (its "skip if the timer was reset" guard is
-what lets a re-armed timer cancel an in-flight disconnect),
+``_execute_timed_disconnect``, ``_execute_disconnect``, and the "skip if the
+timer was reset" guard in ``_execute_disconnect_with_lock`` (what lets a
+re-armed timer cancel an in-flight disconnect),
 ``_send_command``/``_send_command_locked_with_retry`` and the whole protocol.
 """
 
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -63,8 +75,24 @@ _CLOSING_MESSAGE = "Home Assistant is shutting down; not opening a Bluetooth lin
 # Hard bounds for GATT steps the libraries leave unbounded, so no single step
 # can hang for long: cleaning up after a failed connect, and one command
 # exchange (write, then wait for the reply; the reply wait is 5 s on its own).
+# bleak's ``write_gatt_char`` has no timeout parameter to pass, and a cancelled
+# write registers nothing on the proxy, so cancelling it is safe.
 DISCONNECT_CLEANUP_TIMEOUT = 5
 COMMAND_EXCHANGE_TIMEOUT = 10
+
+# A subscribe must never be cancelled mid-flight (bleak-esphome registers its
+# notify handler before the proxy acknowledges and only removes it on an error
+# from inside). The backend is handed this per-round-trip timeout instead so its
+# own error path runs; a subscribe is at most two round-trips on a proxy. The
+# margin keeps the outer guard only as a safety net for a backend that ignores it.
+NOTIFY_BACKEND_TIMEOUT = 4.0
+NOTIFY_SAFETY_MARGIN = 2.0
+
+# The connect guard of the connect in progress in *this* task, so the subscribe
+# step can relax it (concurrent callers each have their own).
+_CONNECT_GUARD: contextvars.ContextVar[asyncio.Timeout | None] = contextvars.ContextVar(
+    "switchbot_express_connect_guard", default=None
+)
 
 
 class ExpressConnectionMixin(SwitchbotBaseDevice):
@@ -85,6 +113,10 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         # Set once by async_release_for_shutdown and never cleared: Home
         # Assistant is going down, so this process must not open another link.
         self._closing = False
+        # A client whose disconnect was cancelled or failed before it was
+        # confirmed: still possibly connected, and no longer referenced by the
+        # library. Finished by the next connect or release.
+        self._pending_disconnect: Any | None = None
         super().__init__(*args, **kwargs)
 
     @property
@@ -166,10 +198,19 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         """
         if self._closing:
             raise SwitchbotOperationError(_CLOSING_MESSAGE)
+        # A link a cancelled disconnect left behind would still hold the device
+        # (and a proxy slot) while the new attempt tries to connect.
+        await self._release_pending_disconnect()
+        if self._closing:
+            raise SwitchbotOperationError(_CLOSING_MESSAGE)
         timeout = self._policy.options.connect_timeout
         try:
-            async with asyncio.timeout(timeout):
-                await super()._ensure_connected()
+            async with asyncio.timeout(timeout) as guard:
+                token = _CONNECT_GUARD.set(guard)
+                try:
+                    await super()._ensure_connected()
+                finally:
+                    _CONNECT_GUARD.reset(token)
         except TimeoutError:
             _LOGGER.debug(
                 "%s: Connect attempt exceeded %ss; failing fast so the next "
@@ -183,6 +224,58 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
             # Shutdown began while this connect was in flight: hand the link back.
             await self._execute_forced_disconnect()
             raise SwitchbotOperationError(_CLOSING_MESSAGE)
+
+    async def _start_notify(self) -> None:
+        """Subscribe, with the backend's own timeout doing the bounding.
+
+        The connect guard is relaxed to a safety net first, so it cannot cancel
+        the subscribe half-way and leave a notify handler registered on the proxy.
+        """
+        per_round_trip = min(
+            NOTIFY_BACKEND_TIMEOUT, self._policy.options.connect_timeout / 2
+        )
+        guard = _CONNECT_GUARD.get()
+        if guard is not None and not guard.expired():
+            guard.reschedule(
+                asyncio.get_running_loop().time()
+                + 2 * per_round_trip
+                + NOTIFY_SAFETY_MARGIN
+            )
+        _LOGGER.debug("%s: Subscribe to notifications; RSSI: %s", self.name, self.rssi)
+        await self._client.start_notify(
+            self._read_char, self._notification_handler, timeout=per_round_trip
+        )
+
+    async def _execute_disconnect_with_lock(self) -> None:
+        """Disconnect, remembering the client until the disconnect is confirmed.
+
+        Upstream forgets the client before awaiting its ``disconnect()``. If that
+        is cancelled (our cleanup bound) or fails, the link may still be up, so
+        the client is kept for the next connect or release to finish.
+        """
+        client = self._client
+        try:
+            await super()._execute_disconnect_with_lock()
+        except BaseException:
+            if client is not None and self._client is None:
+                self._pending_disconnect = client
+            raise
+
+    async def _release_pending_disconnect(self) -> None:
+        """Finish a disconnect that was cancelled half-way, within the cleanup bound."""
+        client = self._pending_disconnect
+        if client is None:
+            return
+        if client.is_connected:
+            try:
+                async with asyncio.timeout(DISCONNECT_CLEANUP_TIMEOUT):
+                    await client.disconnect()
+            except Exception as err:  # noqa: BLE001 - still pending, try again later
+                _LOGGER.debug(
+                    "%s: Finishing the earlier disconnect failed: %r", self.name, err
+                )
+        if not client.is_connected and self._pending_disconnect is client:
+            self._pending_disconnect = None
 
     async def _bounded_forced_disconnect(self) -> None:
         """Drop a half-open link after a failed connect, but never wait on it for long."""
@@ -207,6 +300,8 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         Once the shutdown latch is set every disconnect is deliberate (ours, or the proxy going
         down with Home Assistant): not a fault, so it is neither counted nor warned about.
         """
+        if client is self._pending_disconnect:
+            self._pending_disconnect = None
         if self._closing:
             self._expected_disconnect = True
         unexpected = not self._expected_disconnect
@@ -293,6 +388,7 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
         self._policy.cancel_prewarm()
         self._hold_wanted.clear()
         self._cancel_disconnect_timer()
+        await self._release_pending_disconnect()
         await self._execute_forced_disconnect()
 
     async def async_release_for_shutdown(self) -> None:

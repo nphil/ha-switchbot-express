@@ -69,17 +69,34 @@ class FakeGatt:
     def __init__(self) -> None:
         self.connected = True
         self.services = MagicMock()
+        # A subscribe the proxy never acknowledges. Like bleak-esphome it ends by
+        # itself after the ``timeout`` kwarg when it gets one; a backend that
+        # ignores the kwarg (``notify_honours_timeout = False``) hangs forever.
         self.hang_on_start_notify = False
+        self.notify_honours_timeout = True
+        self.notify_timeouts: list[float | None] = []
+        self.notify_cancelled = 0
         self.hang_on_write = False
         self.hang_on_disconnect = False
+        self.hang_next_disconnects = 0
+        self.disconnect_calls = 0
 
     @property
     def is_connected(self) -> bool:
         return self.connected
 
     async def start_notify(self, *args, **kwargs) -> None:
-        if self.hang_on_start_notify:
+        self.notify_timeouts.append(kwargs.get("timeout"))
+        if not self.hang_on_start_notify:
+            return
+        try:
+            if self.notify_honours_timeout and "timeout" in kwargs:
+                await asyncio.sleep(kwargs["timeout"])
+                raise TimeoutError("the proxy did not acknowledge the subscribe")
             await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            self.notify_cancelled += 1  # would leave a handler registered on a real proxy
+            raise
 
     async def write_gatt_char(self, *args, **kwargs) -> None:
         if self.hang_on_write:
@@ -89,6 +106,10 @@ class FakeGatt:
         return None
 
     async def disconnect(self) -> None:
+        self.disconnect_calls += 1
+        if self.hang_next_disconnects > 0:
+            self.hang_next_disconnects -= 1
+            await asyncio.sleep(3600)
         if self.hang_on_disconnect:
             await asyncio.sleep(3600)
         self.connected = False
@@ -107,12 +128,14 @@ def gatt() -> FakeGatt:
 @pytest.fixture
 def connects(gatt: FakeGatt):
     """Count ``establish_connection`` calls; a test can make it hang forever."""
-    state = {"n": 0, "hang": False}
+    state = {"n": 0, "hang": False, "delay": 0.0}
 
     async def _establish(*args, **kwargs):
         state["n"] += 1
         if state["hang"]:
             await asyncio.sleep(3600)
+        if state["delay"]:
+            await asyncio.sleep(state["delay"])
         gatt.connected = True
         return gatt
 
@@ -354,19 +377,127 @@ async def test_a_connect_that_never_completes_is_cut_at_the_connect_timeout(conn
     assert time.monotonic() - started < 1.5
 
 
-async def test_a_subscribe_and_a_cleanup_disconnect_that_both_hang_are_bounded(gatt, connects) -> None:
+async def test_a_subscribe_the_proxy_never_acknowledges_gets_a_backend_timeout_below_the_guard(
+    gatt, connects
+) -> None:
+    """S8: the backend's own ``timeout`` ends the wait, so the subscribe is never cancelled."""
     gatt.hang_on_start_notify = True
-    gatt.hang_on_disconnect = True
-    device = _fast_device()
+    device = _fast_device(connect_timeout=10)
 
     started = time.monotonic()
     with (
+        patch.object(device_module, "NOTIFY_BACKEND_TIMEOUT", 0.3),
+        pytest.raises(TimeoutError),
+    ):
+        await device.async_ensure_connected()
+
+    assert time.monotonic() - started < 1.5
+    (timeout,) = gatt.notify_timeouts
+    assert timeout == 0.3 and timeout < 10  # passed as a kwarg, below the outer guard
+    assert gatt.notify_cancelled == 0
+
+
+async def test_the_default_subscribe_timeout_is_four_seconds_a_round_trip(gatt, connects) -> None:
+    device = _fast_device(connect_timeout=10)
+    await device.async_ensure_connected()
+    assert gatt.notify_timeouts == [4.0]
+    await device.async_release()
+
+
+async def test_a_slow_connect_does_not_let_the_guard_cancel_the_subscribe(gatt, connects) -> None:
+    """S8: connect used up most of the guard; the guard must not cut into the subscribe."""
+    gatt.hang_on_start_notify = True
+    connects["delay"] = 0.8
+    device = _fast_device(connect_timeout=1.0)
+
+    with (
+        patch.object(device_module, "NOTIFY_BACKEND_TIMEOUT", 0.3),
+        pytest.raises(TimeoutError),
+    ):
+        await device.async_ensure_connected()
+
+    # 0.8 s connect + 0.3 s subscribe is past the 1.0 s guard; the backend ended it, not a cancel.
+    assert gatt.notify_timeouts == [0.3]
+    assert gatt.notify_cancelled == 0
+
+
+async def test_a_backend_that_ignores_the_timeout_is_still_bounded_by_the_safety_net(
+    gatt, connects
+) -> None:
+    gatt.hang_on_start_notify = True
+    gatt.notify_honours_timeout = False
+    gatt.hang_on_disconnect = True
+    device = _fast_device(connect_timeout=10)
+
+    started = time.monotonic()
+    with (
+        patch.object(device_module, "NOTIFY_BACKEND_TIMEOUT", 0.1),
+        patch.object(device_module, "NOTIFY_SAFETY_MARGIN", 0.2),
         patch.object(device_module, "DISCONNECT_CLEANUP_TIMEOUT", 0.2),
         pytest.raises(TimeoutError),
     ):
         await device.async_ensure_connected()
 
-    assert time.monotonic() - started < 2.0
+    assert time.monotonic() - started < 1.5  # safety net 0.4 s, then the bounded cleanup
+
+
+# -- a cancelled disconnect must not lose the only handle to an open link -----
+
+
+async def test_a_cancelled_disconnect_keeps_the_link_and_shutdown_releases_it(gatt, connects) -> None:
+    device = _fast_device(connect_timeout=10)
+    await device.async_ensure_connected()
+    gatt.hang_next_disconnects = 1  # the first disconnect hangs, the retry works
+
+    with patch.object(device_module, "DISCONNECT_CLEANUP_TIMEOUT", 0.2):
+        await device._bounded_forced_disconnect()  # noqa: SLF001 - cut after 0.2 s, does not raise
+    assert gatt.connected  # the proxy link is still open ...
+    assert device._pending_disconnect is gatt  # noqa: SLF001 - ... and we still own it
+
+    await device.async_release_for_shutdown()
+
+    assert gatt.connected is False
+    assert gatt.disconnect_calls == 2
+    assert device._pending_disconnect is None  # noqa: SLF001
+    assert device.closing
+
+
+async def test_the_next_connect_finishes_the_stuck_disconnect_first(gatt) -> None:
+    seen_connected: list[bool] = []
+
+    async def _establish(*args, **kwargs):
+        seen_connected.append(gatt.connected)
+        gatt.connected = True
+        return gatt
+
+    gatt.connected = False
+    device = _fast_device(connect_timeout=10)
+    with patch("switchbot.devices.device.establish_connection", side_effect=_establish):
+        await device.async_ensure_connected()
+        gatt.hang_next_disconnects = 1
+        with patch.object(device_module, "DISCONNECT_CLEANUP_TIMEOUT", 0.2):
+            await device._bounded_forced_disconnect()  # noqa: SLF001
+        assert gatt.connected
+
+        await device.async_ensure_connected()  # the supervisor's / a command's retry
+
+    assert seen_connected == [False, False]  # the old link was gone before the new connect
+    assert device._pending_disconnect is None  # noqa: SLF001
+    await device.async_release()
+
+
+async def test_a_link_that_dropped_by_itself_is_no_longer_pending(gatt, connects) -> None:
+    device = _fast_device(connect_timeout=10)
+    await device.async_ensure_connected()
+    gatt.hang_next_disconnects = 1
+    with patch.object(device_module, "DISCONNECT_CLEANUP_TIMEOUT", 0.2):
+        await device._bounded_forced_disconnect()  # noqa: SLF001
+    assert device._pending_disconnect is gatt  # noqa: SLF001
+
+    gatt.connected = False
+    device._disconnected(gatt)  # noqa: SLF001 - the proxy reports the link gone
+
+    assert device._pending_disconnect is None  # noqa: SLF001
 
 
 async def test_a_write_that_hangs_is_cut_so_the_retry_logic_takes_over(gatt, connects) -> None:
@@ -383,3 +514,40 @@ async def test_a_write_that_hangs_is_cut_so_the_retry_logic_takes_over(gatt, con
 
     assert time.monotonic() - started < 1.5
     await device.async_release()  # no idle timer left running after the test
+
+
+# -- discovery stops before the platforms unload ------------------------------
+
+
+async def test_data_arriving_while_the_platforms_unload_adds_nothing(hass, ble_env) -> None:
+    entry = _new_entry(hass)
+    await _setup_timed(hass, entry)
+    coordinator = entry.runtime_data
+    real_unload_platforms = hass.config_entries.async_unload_platforms
+    reached = asyncio.Event()
+    proceed = asyncio.Event()
+
+    async def _slow_unload_platforms(*args, **kwargs):
+        reached.set()
+        await proceed.wait()
+        return await real_unload_platforms(*args, **kwargs)
+
+    with (
+        patch.object(hass.config_entries, "async_unload_platforms", _slow_unload_platforms),
+        _parsed(ble_env, position=40, battery=88, lightLevel=3),
+    ):
+        unloading = asyncio.create_task(hass.config_entries.async_unload(entry.entry_id))
+        await reached.wait()
+
+        coordinator._async_handle_bluetooth_event(  # noqa: SLF001 - first data, mid-unload
+            _advertisement(ble_env), BluetoothChange.ADVERTISEMENT
+        )
+        await hass.async_block_till_done()
+        assert not [u for u in _entities(hass, entry) if u.endswith(("_battery", "_lightLevel"))]
+
+        proceed.set()
+        assert await unloading
+    await hass.async_block_till_done()
+
+    assert not [u for u in _entities(hass, entry) if u.endswith(("_battery", "_lightLevel"))]
+    assert not coordinator.discovery_open

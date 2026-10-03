@@ -53,7 +53,7 @@ async def async_setup_entry(
     # Battery and light level exist once the device has advertised them, which
     # setup does not wait for.
     async_add_entities_as_data_arrives(
-        entry,
+        coordinator,
         async_add_entities,
         SENSOR_TYPES,
         lambda key: SwitchbotExpressSensor(coordinator, key),
