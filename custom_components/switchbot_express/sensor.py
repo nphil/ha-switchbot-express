@@ -20,7 +20,7 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .const import STATE_DISCONNECTED
 from .coordinator import SwitchbotExpressConfigEntry, SwitchbotExpressCoordinator
-from .entity import SwitchbotExpressEntity
+from .entity import SwitchbotExpressEntity, async_add_entities_as_data_arrives
 
 _LOGGER = logging.getLogger(__name__)
 PARALLEL_UPDATES = 0
@@ -49,13 +49,15 @@ async def async_setup_entry(
 ) -> None:
     """Set up the SwitchBot sensors."""
     coordinator = entry.runtime_data
-    entities: list[SensorEntity] = [
-        SwitchbotExpressSensor(coordinator, key)
-        for key in coordinator.device.parsed_data
-        if key in SENSOR_TYPES
-    ]
-    entities.append(SwitchbotExpressConnectionSensor(coordinator))
-    async_add_entities(entities)
+    async_add_entities([SwitchbotExpressConnectionSensor(coordinator)])
+    # Battery and light level exist once the device has advertised them, which
+    # setup does not wait for.
+    async_add_entities_as_data_arrives(
+        entry,
+        async_add_entities,
+        SENSOR_TYPES,
+        lambda key: SwitchbotExpressSensor(coordinator, key),
+    )
 
 
 class SwitchbotExpressSensor(SwitchbotExpressEntity, SensorEntity):

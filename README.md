@@ -117,6 +117,15 @@ For a Curtain or Curtain 3, named `Living Room Curtain`:
 | `sensor.living_room_curtain_light_level` | From the advertisement. |
 | `sensor.living_room_curtain_connection` | Diagnostic, enabled by default. See below. |
 
+### Startup never waits on the radio
+
+Setting up a device returns within 5 seconds whatever the SwitchBot is doing, so
+a curtain that is out of range or a busy proxy cannot slow Home Assistant's
+start. If the device has not been heard in that time its entities show as
+unavailable and fill in by themselves when it is; the battery, light level and
+calibration entities appear the first time the device advertises them. Nothing is
+moved when a device comes back.
+
 ### The Connection sensor
 
 Its state is the **name of the proxy or adapter currently holding a GATT link**

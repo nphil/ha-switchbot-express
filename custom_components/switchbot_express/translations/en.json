@@ -84,9 +84,6 @@
     },
     "device_not_found": {
       "message": "Could not find a SwitchBot at {address} through a Bluetooth proxy or adapter that can make connections."
-    },
-    "not_advertising": {
-      "message": "The SwitchBot at {address} is not advertising."
     }
   }
 }

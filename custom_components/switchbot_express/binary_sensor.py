@@ -11,7 +11,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .coordinator import SwitchbotExpressConfigEntry, SwitchbotExpressCoordinator
-from .entity import SwitchbotExpressEntity
+from .entity import SwitchbotExpressEntity, async_add_entities_as_data_arrives
 
 PARALLEL_UPDATES = 0
 
@@ -31,10 +31,11 @@ async def async_setup_entry(
 ) -> None:
     """Set up the SwitchBot binary sensors."""
     coordinator = entry.runtime_data
-    async_add_entities(
-        SwitchbotExpressBinarySensor(coordinator, key)
-        for key in coordinator.device.parsed_data
-        if key in BINARY_SENSOR_TYPES
+    async_add_entities_as_data_arrives(
+        entry,
+        async_add_entities,
+        BINARY_SENSOR_TYPES,
+        lambda key: SwitchbotExpressBinarySensor(coordinator, key),
     )
 
 

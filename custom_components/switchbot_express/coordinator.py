@@ -36,7 +36,9 @@ from .policy import ConnectionPolicy
 
 _LOGGER = logging.getLogger(__name__)
 
-DEVICE_STARTUP_TIMEOUT = 30
+# Setup returns within this many seconds of being called, whatever the device
+# is doing. Connecting, authenticating and polling carry on in the background.
+SETUP_BUDGET = 5.0
 
 # Upper bound for the shutdown-time release. Home Assistant gives all shutdown
 # jobs one shared 20 s budget.
@@ -234,10 +236,14 @@ class SwitchbotExpressCoordinator(ActiveBluetoothDataUpdateCoordinator[None]):
         self._async_update_battery()
         super()._async_handle_bluetooth_event(service_info, change)
 
-    async def async_wait_ready(self) -> bool:
-        """Wait for the device to be ready."""
+    async def async_wait_ready(self, timeout: float = SETUP_BUDGET) -> bool:
+        """Wait up to ``timeout`` s for the first advertisement; False if none came.
+
+        Never raises on a timeout: the entities simply stay unavailable until
+        the device is heard, which the coordinator picks up by itself.
+        """
         with contextlib.suppress(TimeoutError):
-            async with asyncio.timeout(DEVICE_STARTUP_TIMEOUT):
+            async with asyncio.timeout(max(timeout, 0)):
                 await self._ready_event.wait()
                 return True
         return False

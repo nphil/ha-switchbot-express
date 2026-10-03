@@ -18,6 +18,10 @@ Upstream surface this file depends on -- pySwitchbot 2.4.1,
   ``TimeoutError``, which is in ``BLEAK_RETRY_EXCEPTIONS``, so the library's
   own retry loop tries again -- and habluetooth re-scores the proxies for that
   next attempt, which is how roaming happens.
+* ``SwitchbotBaseDevice._execute_command_locked`` -- WRAPPED in a 10 s
+  timeout. Upstream's ``write_gatt_char`` has none, so a stuck write would hold
+  the operation lock for as long as the proxy takes to give up. The resulting
+  ``TimeoutError`` takes upstream's normal disconnect-and-retry path.
 * ``SwitchbotBaseDevice._disconnected`` -- EXTENDED. Upstream logs and cancels
   the timer; we additionally record unexpected drops and wake the supervisor.
   We read ``_expected_disconnect`` before delegating because upstream does not
@@ -55,6 +59,12 @@ from .policy import ConnectionPolicy, reconnect_delay
 _LOGGER = logging.getLogger(__name__)
 
 _CLOSING_MESSAGE = "Home Assistant is shutting down; not opening a Bluetooth link"
+
+# Hard bounds for GATT steps the libraries leave unbounded, so no single step
+# can hang for long: cleaning up after a failed connect, and one command
+# exchange (write, then wait for the reply; the reply wait is 5 s on its own).
+DISCONNECT_CLEANUP_TIMEOUT = 5
+COMMAND_EXCHANGE_TIMEOUT = 10
 
 
 class ExpressConnectionMixin(SwitchbotBaseDevice):
@@ -167,12 +177,29 @@ class ExpressConnectionMixin(SwitchbotBaseDevice):
                 self.name,
                 timeout,
             )
-            await self._execute_forced_disconnect()
+            await self._bounded_forced_disconnect()
             raise
         if self._closing:
             # Shutdown began while this connect was in flight: hand the link back.
             await self._execute_forced_disconnect()
             raise SwitchbotOperationError(_CLOSING_MESSAGE)
+
+    async def _bounded_forced_disconnect(self) -> None:
+        """Drop a half-open link after a failed connect, but never wait on it for long."""
+        try:
+            async with asyncio.timeout(DISCONNECT_CLEANUP_TIMEOUT):
+                await self._execute_forced_disconnect()
+        except TimeoutError:
+            _LOGGER.debug("%s: Cleanup disconnect did not finish in time", self.name)
+
+    async def _execute_command_locked(self, key: str, command: bytes) -> bytes:
+        """Send one command, but never let a stuck write wedge the device's lock.
+
+        ``TimeoutError`` is a bleak retry exception, so pySwitchbot disconnects and
+        retries exactly as it does for any other failed exchange.
+        """
+        async with asyncio.timeout(COMMAND_EXCHANGE_TIMEOUT):
+            return await super()._execute_command_locked(key, command)
 
     def _disconnected(self, client: Any) -> None:
         """Record unexpected drops on top of upstream's handling.

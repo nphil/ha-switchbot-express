@@ -372,7 +372,7 @@ async def test_setup_that_becomes_latched_while_waiting_starts_nothing(hass, ble
     """B: re-checked after every await, not only on entry. No supervisor, no job, no link."""
     entry = _new_entry(hass, hold_connection=True)
 
-    async def _latch_while_waiting(self) -> bool:
+    async def _latch_while_waiting(self, timeout: float) -> bool:
         shutdown.begin(hass)
         return True
 
@@ -408,7 +408,7 @@ async def test_per_entry_job_registered_before_the_first_await_after_the_device_
     entry = _new_entry(hass)
     count_at_wait: list[int] = []
 
-    async def _spy(self) -> bool:
+    async def _spy(self, timeout: float) -> bool:
         count_at_wait.append(len(_release_jobs(hass)))
         return True
 

@@ -13,6 +13,7 @@ wedging a command for a minute.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 import switchbot
@@ -27,7 +28,11 @@ from homeassistant.helpers.typing import ConfigType
 
 from . import shutdown
 from .const import CONF_DEVICE_TYPE, DOMAIN, ISSUE_LOW_BATTERY, PLATFORMS_BY_TYPE
-from .coordinator import SwitchbotExpressConfigEntry, SwitchbotExpressCoordinator
+from .coordinator import (
+    SETUP_BUDGET,
+    SwitchbotExpressConfigEntry,
+    SwitchbotExpressCoordinator,
+)
 from .device import SUPPORTED_TYPES, core_disconnect_delay, create_device
 from .policy import ConnectionPolicy, PolicyOptions
 
@@ -78,9 +83,20 @@ async def async_setup_entry(
         )
         return False
 
+    # One budget for everything setup itself waits on (the stale-link cleanup
+    # and the first advertisement): whatever the device or the radio does,
+    # setup returns within SETUP_BUDGET s and the rest happens in the background.
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + SETUP_BUDGET
+
     # Another integration (or a previous run) may still be holding this
-    # device; a stale link would make every command here time out.
-    await switchbot.close_stale_connections_by_address(address)
+    # device; a stale link would make every command here time out. The library
+    # call has no timeout of its own (it talks to BlueZ over D-Bus).
+    try:
+        async with asyncio.timeout_at(deadline):
+            await switchbot.close_stale_connections_by_address(address)
+    except TimeoutError:
+        _LOGGER.debug("%s: Stale-connection cleanup timed out; carrying on", address)
     _refuse_while_shutting_down(hass)
 
     ble_device = bluetooth.async_ble_device_from_address(hass, address, True)
@@ -116,13 +132,16 @@ async def async_setup_entry(
         )
     )
     entry.async_on_unload(coordinator.async_start())
-    if not await coordinator.async_wait_ready():
-        raise ConfigEntryNotReady(
-            translation_domain=DOMAIN,
-            translation_key="not_advertising",
-            translation_placeholders={"address": address},
+    # Not hearing the device inside the budget is not a failure: the entities
+    # stay unavailable and fill in when the first advertisement arrives, and the
+    # connection supervisor retries by itself (a retry backoff would only delay it).
+    if not await coordinator.async_wait_ready(deadline - loop.time()):
+        _LOGGER.debug(
+            "%s: Not heard within %s s; entities stay unavailable until it is",
+            address,
+            SETUP_BUDGET,
         )
-    # Shutdown may have begun while waiting for the first advertisement (up to 30 s).
+    # Shutdown may have begun while waiting for the first advertisement.
     _refuse_while_shutting_down(hass)
 
     coordinator.async_setup_link()
