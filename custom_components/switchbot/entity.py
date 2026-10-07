@@ -89,7 +89,7 @@ class SwitchbotExpressEntity(
     async def async_prewarm(self) -> None:
         """Connect now and keep the link warm.
 
-        Backs the ``switchbot_express.prewarm`` entity service. Registering it
+        Backs the ``switchbot.prewarm`` entity service. Registering it
         on a platform is one line, so a future Bot or Plug Mini platform gets
         it for free (see ``cover.py``).
         """

@@ -17,7 +17,7 @@ import pytest
 
 sys.path.insert(
     0,
-    str(Path(__file__).resolve().parents[1] / "custom_components" / "switchbot_express"),
+    str(Path(__file__).resolve().parents[1] / "custom_components" / "switchbot"),
 )
 
 from policy import (  # noqa: E402

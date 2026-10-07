@@ -49,7 +49,7 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
     registered here, is never removed with an entry, and latches everything: loaded devices are
     told to refuse connects, and entry setup refuses to start (see ``_refuse_while_shutting_down``).
     """
-    hass.async_add_shutdown_job(HassJob(_async_latch_for_shutdown, "switchbot_express shutdown latch"), hass)
+    hass.async_add_shutdown_job(HassJob(_async_latch_for_shutdown, "switchbot shutdown latch"), hass)
     return True
 
 
@@ -127,7 +127,7 @@ async def async_setup_entry(
         hass.async_add_shutdown_job(
             HassJob(
                 coordinator.async_release_at_shutdown,
-                f"switchbot_express release BLE link {entry.title}",
+                f"switchbot release BLE link {entry.title}",
             )
         )
     )

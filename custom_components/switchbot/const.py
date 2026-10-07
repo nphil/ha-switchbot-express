@@ -62,7 +62,7 @@ __all__ = [
     "STATE_DISCONNECTED",
 ]
 
-DOMAIN = "switchbot_express"
+DOMAIN = "switchbot"
 MANUFACTURER = "SwitchBot"
 
 # Entry data keys. CONF_ADDRESS and CONF_NAME come from homeassistant.const.

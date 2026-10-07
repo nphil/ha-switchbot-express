@@ -1,5 +1,5 @@
 {
-  "domain": "switchbot_express",
+  "domain": "switchbot",
   "name": "SwitchBot Express",
   "bluetooth": [
     {
@@ -27,11 +27,11 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/nphil/ha-switchbot-express/issues",
   "loggers": [
-    "custom_components.switchbot_express",
+    "custom_components.switchbot",
     "switchbot",
     "bleak_retry_connector",
     "habluetooth"
   ],
   "requirements": ["PySwitchbot>=2.9.0"],
-  "version": "1.0.6"
+  "version": "1.1.0"
 }

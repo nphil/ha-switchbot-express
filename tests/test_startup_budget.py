@@ -48,13 +48,13 @@ from homeassistant.const import CONF_ADDRESS, CONF_NAME, STATE_UNAVAILABLE  # no
 from homeassistant.helpers import entity_registry as er  # noqa: E402
 from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
 
-from custom_components.switchbot_express import device as device_module  # noqa: E402
-from custom_components.switchbot_express.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
-from custom_components.switchbot_express.device import (  # noqa: E402
+from custom_components.switchbot import device as device_module  # noqa: E402
+from custom_components.switchbot.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
+from custom_components.switchbot.device import (  # noqa: E402
     SwitchbotExpressCurtain,
     create_device,
 )
-from custom_components.switchbot_express.policy import (  # noqa: E402
+from custom_components.switchbot.policy import (  # noqa: E402
     ConnectionPolicy,
     PolicyOptions,
 )
@@ -149,11 +149,11 @@ def ble_env(hass, mock_bluetooth, gatt, connects):
     ble_device = BLEDevice(ADDRESS, "WoCurtain", {})
     with (
         patch(
-            "custom_components.switchbot_express.bluetooth.async_ble_device_from_address",
+            "custom_components.switchbot.bluetooth.async_ble_device_from_address",
             return_value=ble_device,
         ),
         patch("switchbot.close_stale_connections_by_address", new=AsyncMock()),
-        patch("custom_components.switchbot_express.SETUP_BUDGET", BUDGET),
+        patch("custom_components.switchbot.SETUP_BUDGET", BUDGET),
     ):
         yield ble_device
 
@@ -204,7 +204,7 @@ def _parsed(ble_device: BLEDevice, **data):
     """
     with (
         patch(
-            "custom_components.switchbot_express.coordinator.switchbot.parse_advertisement_data",
+            "custom_components.switchbot.coordinator.switchbot.parse_advertisement_data",
             return_value=SwitchBotAdvertisement(
                 address=ADDRESS,
                 data={"modelName": SwitchbotModel.CURTAIN, "data": data},
@@ -252,7 +252,7 @@ async def test_setup_returns_inside_budget_while_a_hold_connect_hangs_forever(
     connects["hang"] = True
     entry = _new_entry(hass, hold_connection=True)
 
-    with patch("custom_components.switchbot_express.device.reconnect_delay", return_value=0):
+    with patch("custom_components.switchbot.device.reconnect_delay", return_value=0):
         elapsed = await _setup_timed(hass, entry)
         await asyncio.sleep(0.05)  # the supervisor's first attempt is now in flight
 

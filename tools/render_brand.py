@@ -1,7 +1,7 @@
 """Deterministic Pillow renderer for the SwitchBot Express brand kit.
 
 Writes the eight images Home Assistant serves straight from
-``custom_components/switchbot_express/brand/`` (no brands-repo submission needed):
+``custom_components/switchbot/brand/`` (no brands-repo submission needed):
 
     icon.png        256x256      dark_icon.png        256x256
     icon@2x.png     512x512      dark_icon@2x.png     512x512
@@ -29,7 +29,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-BRAND_DIR = REPO_ROOT / "custom_components" / "switchbot_express" / "brand"
+BRAND_DIR = REPO_ROOT / "custom_components" / "switchbot" / "brand"
 
 FONT_CANDIDATES = (
     "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf",

@@ -35,10 +35,10 @@ from homeassistant.config_entries import ConfigEntryState  # noqa: E402
 from homeassistant.const import CONF_ADDRESS, CONF_NAME  # noqa: E402
 from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
 
-from custom_components.switchbot_express import shutdown  # noqa: E402
-from custom_components.switchbot_express.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
-from custom_components.switchbot_express.device import create_device  # noqa: E402
-from custom_components.switchbot_express.policy import (  # noqa: E402
+from custom_components.switchbot import shutdown  # noqa: E402
+from custom_components.switchbot.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
+from custom_components.switchbot.device import create_device  # noqa: E402
+from custom_components.switchbot.policy import (  # noqa: E402
     ConnectionPolicy,
     PolicyOptions,
 )
@@ -183,12 +183,12 @@ def ble_env(hass, mock_bluetooth, gatt, connects):
     ble_device = BLEDevice(ADDRESS, "WoCurtain", {})
     with (
         patch(
-            "custom_components.switchbot_express.bluetooth.async_ble_device_from_address",
+            "custom_components.switchbot.bluetooth.async_ble_device_from_address",
             return_value=ble_device,
         ),
         patch("switchbot.close_stale_connections_by_address", new=AsyncMock()),
         patch(
-            "custom_components.switchbot_express.coordinator.SwitchbotExpressCoordinator.async_wait_ready",
+            "custom_components.switchbot.coordinator.SwitchbotExpressCoordinator.async_wait_ready",
             new=AsyncMock(return_value=True),
         ),
     ):
@@ -220,7 +220,7 @@ def _release_jobs(hass) -> list:
     return [
         job_with_args
         for job_with_args in hass._shutdown_jobs  # noqa: SLF001 - no public accessor
-        if "switchbot_express release BLE link" in str(job_with_args.job.name)
+        if "switchbot release BLE link" in str(job_with_args.job.name)
     ]
 
 
@@ -245,7 +245,7 @@ async def test_shutdown_job_releases_prewarmed_link_and_latches(
     await coordinator.async_prewarm()
     assert coordinator.device.is_connected
 
-    with caplog.at_level(logging.INFO, logger="custom_components.switchbot_express.coordinator"):
+    with caplog.at_level(logging.INFO, logger="custom_components.switchbot.coordinator"):
         await _run_release_job(hass)
 
     assert gatt.connected is False
@@ -264,8 +264,8 @@ async def test_hanging_disconnect_is_bounded_and_does_not_raise(
     gatt.hang_on_disconnect = True
 
     with (
-        patch("custom_components.switchbot_express.coordinator.SHUTDOWN_RELEASE_TIMEOUT", 0.2),
-        caplog.at_level(logging.WARNING, logger="custom_components.switchbot_express.coordinator"),
+        patch("custom_components.switchbot.coordinator.SHUTDOWN_RELEASE_TIMEOUT", 0.2),
+        caplog.at_level(logging.WARNING, logger="custom_components.switchbot.coordinator"),
     ):
         started = time.monotonic()
         await _run_release_job(hass)  # must return, not raise
@@ -286,7 +286,7 @@ async def test_failing_disconnect_does_not_raise(
             "async_release_for_shutdown",
             AsyncMock(side_effect=RuntimeError("proxy went away")),
         ),
-        caplog.at_level(logging.WARNING, logger="custom_components.switchbot_express.coordinator"),
+        caplog.at_level(logging.WARNING, logger="custom_components.switchbot.coordinator"),
     ):
         await _run_release_job(hass)
 
@@ -300,7 +300,7 @@ def _latch_jobs(hass) -> list:
     return [
         job_with_args
         for job_with_args in hass._shutdown_jobs  # noqa: SLF001 - no public accessor
-        if "switchbot_express shutdown latch" in str(job_with_args.job.name)
+        if "switchbot shutdown latch" in str(job_with_args.job.name)
     ]
 
 
@@ -340,7 +340,7 @@ async def test_domain_latch_job_latches_loaded_devices_without_any_entry_job(
 
 async def test_domain_latch_wakes_a_holding_supervisor_so_it_exits(hass, ble_env, gatt, connects) -> None:
     entry = _new_entry(hass, hold_connection=True)
-    with patch("custom_components.switchbot_express.device.reconnect_delay", return_value=0):
+    with patch("custom_components.switchbot.device.reconnect_delay", return_value=0):
         assert await hass.config_entries.async_setup(entry.entry_id)
         await hass.async_block_till_done()
         await asyncio.sleep(0.05)  # the supervisor connects and parks on the link
@@ -377,7 +377,7 @@ async def test_setup_that_becomes_latched_while_waiting_starts_nothing(hass, ble
         return True
 
     with patch(
-        "custom_components.switchbot_express.coordinator.SwitchbotExpressCoordinator.async_wait_ready",
+        "custom_components.switchbot.coordinator.SwitchbotExpressCoordinator.async_wait_ready",
         _latch_while_waiting,
     ):
         assert not await hass.config_entries.async_setup(entry.entry_id)
@@ -413,7 +413,7 @@ async def test_per_entry_job_registered_before_the_first_await_after_the_device_
         return True
 
     with patch(
-        "custom_components.switchbot_express.coordinator.SwitchbotExpressCoordinator.async_wait_ready", _spy
+        "custom_components.switchbot.coordinator.SwitchbotExpressCoordinator.async_wait_ready", _spy
     ):
         assert await hass.config_entries.async_setup(entry.entry_id)
 
@@ -435,7 +435,7 @@ async def test_refusals_during_shutdown_are_not_faults(hass, entry, gatt, connec
 
     # No advertisement arrives in the test, so the entity would be skipped as unavailable.
     with patch(
-        "custom_components.switchbot_express.entity.SwitchbotExpressEntity.available",
+        "custom_components.switchbot.entity.SwitchbotExpressEntity.available",
         new=property(lambda self: True),
     ):
         with pytest.raises(HomeAssistantError):  # not a raw pySwitchbot exception with a traceback

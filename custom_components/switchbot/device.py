@@ -94,7 +94,7 @@ NOTIFY_SAFETY_MARGIN = 2.0
 # The connect guard of the connect in progress in *this* task, so the subscribe
 # step can relax it (concurrent callers each have their own).
 _CONNECT_GUARD: contextvars.ContextVar[asyncio.Timeout | None] = contextvars.ContextVar(
-    "switchbot_express_connect_guard", default=None
+    "switchbot_connect_guard", default=None
 )
 
 

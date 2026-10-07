@@ -1,6 +1,6 @@
 prewarm:
   target:
     entity:
-      integration: switchbot_express
+      integration: switchbot
       domain:
         - cover

@@ -1,10 +1,16 @@
-<img src="custom_components/switchbot_express/brand/icon.png" width="96" align="right" alt="">
+<img src="custom_components/switchbot/brand/icon.png" width="96" align="right" alt="">
 
 # SwitchBot Express
 
-A drop-in replacement for Home Assistant's core `switchbot` integration for
-Bluetooth SwitchBots, with a **connection policy you control**. Same protocol
+A replacement for Home Assistant's core `switchbot` integration for Bluetooth
+SwitchBot curtains, with a **connection policy you control**. Since 1.1.0 it
+uses the domain `switchbot`, so it **overrides core**: Home Assistant loads this
+integration instead of the built-in one, every SwitchBot discovery comes here,
+and there are never two integrations offering the same device. Same protocol
 library (`PySwitchbot`), same entity IDs, far fewer commands that make you wait.
+
+Because it replaces core, SwitchBot models this integration does not support
+(see [Requirements](#requirements)) stop working while it is installed.
 
 [![hacs][hacs-badge]][hacs] [![release][release-badge]][releases] [![validate][validate-badge]][validate]
 
@@ -60,7 +66,7 @@ That is why the defaults here are small:
 ## How to get an instant first command without hurting the battery
 
 Do not hold the link and hope. **Prewarm on intent**: fire
-`switchbot_express.prewarm` from the same trigger that is about to move the
+`switchbot.prewarm` from the same trigger that is about to move the
 device, 30 to 60 seconds ahead. The radio is awake for that one minute instead
 of all day, and the command that follows runs with the link already open.
 
@@ -72,7 +78,7 @@ automation:
         event: sunset
         offset: "-00:01:00" # 60 s before the close below
     actions:
-      - action: switchbot_express.prewarm
+      - action: switchbot.prewarm
         target:
           entity_id: cover.living_room_curtain
 
@@ -150,7 +156,7 @@ device that has drifted closer to a different proxy roams onto it by itself.
 
 ## Actions
 
-### `switchbot_express.prewarm`
+### `switchbot.prewarm`
 
 Connects now and keeps the link for `prewarm_seconds`. Target an entity, a
 device, or an area. No other fields.
@@ -161,61 +167,62 @@ device, or an area. No other fields.
 repositories*, add `https://github.com/nphil/ha-switchbot-express` with
 category *Integration*, then install **SwitchBot Express** and restart Home
 Assistant. Your SwitchBot should appear under *Settings → Devices & services*
-as discovered; otherwise use *Add integration → SwitchBot Express*.
+as discovered; otherwise use *Add integration → SwitchBot Express*. Home
+Assistant logs a warning at every start that a custom integration overrides
+`switchbot`; that is expected.
 
-Manual: copy `custom_components/switchbot_express` into your `config`
+Manual: copy `custom_components/switchbot` into your `config`
 directory and restart.
 
-## Migrating from the core SwitchBot integration
+## Migrating
 
 Entity IDs are derived from the device name, so they survive the move as long
-as you set the same name.
+as you set the same name. This applies both to devices on the core SwitchBot
+integration and to devices on SwitchBot Express before 1.1.0 (domain
+`switchbot_express`).
 
-1. Note the current name of the device (**Settings → Devices & services →
-   SwitchBot Bluetooth → your device**), for example `Living Room Curtain`.
-2. Delete the core `switchbot` config entry for that device. This removes its
-   entities; long-term statistics for the sensors are keyed by entity ID and
-   are picked up again in step 4.
-3. Add **SwitchBot Express** and pick the device. In the confirmation step,
-   **type the exact name from step 1** — the default is the name core would
-   have generated (`Curtain 3 1932`), which would produce different entity IDs.
+1. Note the current name of the device, for example `Living Room Curtain`.
+2. Delete its config entry (core `switchbot` or `switchbot_express`), and any
+   *ignored* SwitchBot entries, which 1.1.0 would otherwise inherit. Long-term
+   statistics are keyed by entity ID and are picked up again in step 4.
+3. Update to 1.1.0, restart, and add the device. In the confirmation step,
+   **type the exact name from step 1** — the default is the generated name
+   (`Curtain 3 1932`), which would produce different entity IDs.
 4. Check the entity IDs match what you had: `cover.living_room_curtain`,
    `sensor.living_room_curtain_battery`, and so on. Automations, dashboards and
-   statistics carry on untouched.
-
-Both integrations can be installed at once, but do not set up the same physical
-device in both: they would fight over the one connection slot the device has.
+   statistics carry on untouched. The `switchbot_express.prewarm` action is now
+   `switchbot.prewarm`.
 
 ## Requirements
 
 - Home Assistant **2026.10.0** or newer, with the `bluetooth` integration and at
   least one **connectable** adapter or ESPHome Bluetooth proxy in range.
 - `PySwitchbot` 2.9.0 or newer, installed automatically. This is a minimum, not
-  a pin, so it never downgrades the copy the core SwitchBot integration uses.
+  a pin, so it never downgrades a newer copy already installed.
 
 Supported today: **Curtain** and **Curtain 3**. Bot, Plug Mini and Blind Tilt
 fit the same device layer and are not implemented yet. Encrypted models
-(locks), cloud accounts and advertisement-only sensors are out of scope — core's
-integration handles those well, and nothing here would help them.
+(locks), cloud accounts and advertisement-only sensors are out of scope; if you
+own those, use core's integration instead of this one.
 
 ## Development
 
 The connection policy — linger, hold, prewarm, the battery threshold, the
 backoff sequence and the drop window — lives in
-`custom_components/switchbot_express/policy.py` with no Home Assistant, bleak or
+`custom_components/switchbot/policy.py` with no Home Assistant, bleak or
 pySwitchbot imports, and is tested on its own:
 
 ```bash
 python3 -m pytest tests
 ```
 
-`custom_components/switchbot_express/device.py` is the only file that touches
+`custom_components/switchbot/device.py` is the only file that touches
 pySwitchbot internals. Its module docstring lists every upstream method it
 overrides, wraps or relies on; check that list when bumping the pin in
 `manifest.json`.
 
 Brand images for HACS and the Home Assistant UI live in
-`custom_components/switchbot_express/brand/` (all eight PNGs: icon, logo, and
+`custom_components/switchbot/brand/` (all eight PNGs: icon, logo, and
 their `dark_` and `@2x` variants). They are rendered from `icon.svg` by
 `python3 tools/render_brand.py` (Pillow only).
 
