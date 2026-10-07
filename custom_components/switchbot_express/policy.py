@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-# pySwitchbot 2.4.1 switchbot/devices/device.py::DISCONNECT_DELAY. Used as the
+# pySwitchbot switchbot/devices/device.py::DISCONNECT_DELAY (8.5 through 2.9.0). Used as the
 # floor for every decision so that "SwitchBot Express does nothing" degrades
 # exactly to upstream behaviour. device.py passes the library's own value in,
 # so a library bump cannot silently drift from this default.

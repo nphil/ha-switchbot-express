@@ -188,9 +188,10 @@ device in both: they would fight over the one connection slot the device has.
 
 ## Requirements
 
-- Home Assistant **2026.9.0** or newer, with the `bluetooth` integration and at
+- Home Assistant **2026.10.0** or newer, with the `bluetooth` integration and at
   least one **connectable** adapter or ESPHome Bluetooth proxy in range.
-- `PySwitchbot==2.4.1`, installed automatically.
+- `PySwitchbot` 2.9.0 or newer, installed automatically. This is a minimum, not
+  a pin, so it never downgrades the copy the core SwitchBot integration uses.
 
 Supported today: **Curtain** and **Curtain 3**. Bot, Plug Mini and Blind Tilt
 fit the same device layer and are not implemented yet. Encrypted models

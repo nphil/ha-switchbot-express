@@ -2,9 +2,12 @@
 
 The protocol stays in the library; only the connection lifecycle is ours.
 
-Upstream surface this file depends on -- pySwitchbot 2.4.1,
-``switchbot/devices/device.py``. Audit exactly these when bumping the pin in
-``manifest.json``; everything else is untouched.
+Upstream surface this file depends on -- pySwitchbot ``switchbot/devices/device.py``,
+audited unchanged from 2.4.1 through 2.9.0. The requirement is a floor, not a
+pin: the core SwitchBot integration pins an exact version, and an exact pin here
+would downgrade the shared library under core on every Home Assistant release
+(2.4.1 broke core's import on 2026.10). When core moves to a newer version,
+audit exactly these; everything else is untouched.
 
 * ``SwitchbotBaseDevice._reset_disconnect_timer`` -- OVERRIDDEN. Upstream arms
   ``call_later(DISCONNECT_DELAY, self._disconnect_from_timer)`` unconditionally.
