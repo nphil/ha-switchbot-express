@@ -19,6 +19,7 @@
       "manufacturer_id": 2409
     }
   ],
+  "categories": ["blinds_curtains", "sensors"],
   "codeowners": ["@nphil"],
   "config_flow": true,
   "dependencies": ["bluetooth_adapters"],
@@ -33,5 +34,5 @@
     "habluetooth"
   ],
   "requirements": ["PySwitchbot>=2.9.0"],
-  "version": "1.1.0"
+  "version": "1.1.1"
 }

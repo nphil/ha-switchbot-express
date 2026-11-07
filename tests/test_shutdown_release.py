@@ -5,11 +5,10 @@ proxies. The job must drop a held, lingering or prewarmed link, latch the
 device so nothing reconnects in this process, stay inside its time budget and
 never raise.
 
-These tests need Home Assistant, pySwitchbot and pytest-homeassistant-custom-
-component, unlike ``test_policy.py``; they are skipped where those are absent
-(the CI "policy tests" job installs only pytest). Run them with::
+These tests need Home Assistant, pySwitchbot and pytest-homeassistant, unlike
+``test_policy.py``; they are skipped where those are absent. Run them with::
 
-    PYTHONPATH=. python -m pytest tests/test_shutdown_release.py -o asyncio_mode=auto
+    python -m pytest tests/test_shutdown_release.py
 """
 
 from __future__ import annotations
@@ -23,7 +22,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-pytest.importorskip("pytest_homeassistant_custom_component")
+pytest.importorskip("pytest_homeassistant")
 pytest.importorskip("switchbot")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -33,7 +32,7 @@ from switchbot import SwitchbotOperationError  # noqa: E402
 
 from homeassistant.config_entries import ConfigEntryState  # noqa: E402
 from homeassistant.const import CONF_ADDRESS, CONF_NAME  # noqa: E402
-from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
+from pytest_homeassistant.common import MockConfigEntry  # noqa: E402
 
 from custom_components.switchbot import shutdown  # noqa: E402
 from custom_components.switchbot.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
@@ -70,11 +69,6 @@ class FakeGatt:
         if self.hang_on_disconnect:
             await asyncio.sleep(3600)
         self.connected = False
-
-
-@pytest.fixture(autouse=True)
-def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Load this repo's custom_components as real integrations."""
 
 
 @pytest.fixture

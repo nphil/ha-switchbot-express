@@ -74,6 +74,11 @@ class SwitchbotExpressCurtainEntity(SwitchbotExpressEntity, CoverEntity, Restore
         if self._attr_current_cover_position is not None:
             self._attr_is_closed = self._attr_current_cover_position <= CLOSED_THRESHOLD
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id changes (nothing here is keyed on it)."""
+        super().async_entity_id_changed(old_entity_id)
+
     @exception_handler
     async def async_open_cover(self, **kwargs: Any) -> None:
         """Open the curtain."""

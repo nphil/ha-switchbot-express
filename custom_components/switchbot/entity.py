@@ -11,7 +11,6 @@ from switchbot import SwitchbotOperationError
 from homeassistant.components.bluetooth.passive_update_coordinator import (
     PassiveBluetoothCoordinatorEntity,
 )
-from homeassistant.const import ATTR_CONNECTIONS
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import device_registry as dr
@@ -38,18 +37,17 @@ class SwitchbotExpressEntity(
         self._last_run_success: bool | None = None
         self._address = coordinator.ble_device.address
         self._attr_unique_id = coordinator.base_unique_id
+        connections = {(dr.CONNECTION_BLUETOOTH, self._address)}
+        if ":" in self._address:
+            # A Bluetooth address that is also a MAC address; registering it
+            # keeps the device from being split in two on some platforms.
+            connections.add((dr.CONNECTION_NETWORK_MAC, self._address))
         self._attr_device_info = DeviceInfo(
-            connections={(dr.CONNECTION_BLUETOOTH, self._address)},
+            connections=connections,
             manufacturer=MANUFACTURER,
             model=str(coordinator.model),
             name=coordinator.device_name,
         )
-        if ":" in self._address:
-            # A Bluetooth address that is also a MAC address; registering it
-            # keeps the device from being split in two on some platforms.
-            self._attr_device_info[ATTR_CONNECTIONS].add(
-                (dr.CONNECTION_NETWORK_MAC, self._address)
-            )
 
     @property
     def parsed_data(self) -> dict[str, Any]:
@@ -85,6 +83,11 @@ class SwitchbotExpressEntity(
         """Register callbacks."""
         self.async_on_remove(self._device.subscribe(self._handle_coordinator_update))
         await super().async_added_to_hass()
+
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id changes (nothing here is keyed on it)."""
+        super().async_entity_id_changed(old_entity_id)
 
     async def async_prewarm(self) -> None:
         """Connect now and keep the link warm.

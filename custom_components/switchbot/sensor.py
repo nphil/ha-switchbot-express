@@ -112,6 +112,11 @@ class SwitchbotExpressConnectionSensor(SwitchbotExpressEntity, SensorEntity):
         )
         self._async_refresh_source()
 
+    @callback
+    def async_entity_id_changed(self, old_entity_id: str) -> None:
+        """Opt in to in-place entity_id changes (nothing here is keyed on it)."""
+        super().async_entity_id_changed(old_entity_id)
+
     @property
     def native_value(self) -> str:
         """Return the scanner holding the link, or ``disconnected``."""

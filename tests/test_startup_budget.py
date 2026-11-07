@@ -10,9 +10,9 @@ step that hangs delays the whole restart. These tests pin the contract:
 * no single GATT step can hang for long.
 
 Like ``test_shutdown_release.py`` they need Home Assistant, pySwitchbot and
-pytest-homeassistant-custom-component and are skipped where those are absent::
+pytest-homeassistant and are skipped where those are absent::
 
-    PYTHONPATH=. python -m pytest tests/test_startup_budget.py -o asyncio_mode=auto
+    python -m pytest tests/test_startup_budget.py
 """
 
 from __future__ import annotations
@@ -27,7 +27,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-pytest.importorskip("pytest_homeassistant_custom_component")
+pytest.importorskip("pytest_homeassistant")
 pytest.importorskip("switchbot")
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -45,8 +45,8 @@ from homeassistant.components.bluetooth.active_update_coordinator import (  # no
 )
 from homeassistant.config_entries import ConfigEntryState  # noqa: E402
 from homeassistant.const import CONF_ADDRESS, CONF_NAME, STATE_UNAVAILABLE  # noqa: E402
-from homeassistant.helpers import entity_registry as er  # noqa: E402
-from pytest_homeassistant_custom_component.common import MockConfigEntry  # noqa: E402
+from homeassistant.helpers import device_registry as dr, entity_registry as er  # noqa: E402
+from pytest_homeassistant.common import MockConfigEntry  # noqa: E402
 
 from custom_components.switchbot import device as device_module  # noqa: E402
 from custom_components.switchbot.const import CONF_DEVICE_TYPE, DOMAIN  # noqa: E402
@@ -113,11 +113,6 @@ class FakeGatt:
         if self.hang_on_disconnect:
             await asyncio.sleep(3600)
         self.connected = False
-
-
-@pytest.fixture(autouse=True)
-def _auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
-    """Load this repo's custom_components as real integrations."""
 
 
 @pytest.fixture
@@ -282,6 +277,46 @@ def _entities(hass, entry) -> dict[str, str]:
     }
 
 
+async def test_the_device_registers_its_bluetooth_and_mac_connections(hass, ble_env) -> None:
+    """The device row carries both connections, built without mutating a ``DeviceInfo``."""
+    entry = _new_entry(hass)
+    await _setup_timed(hass, entry)
+
+    devices = dr.async_get(hass).async_get_devices(
+        connections={(dr.CONNECTION_BLUETOOTH, ADDRESS)}
+    )
+    assert len(devices) == 1
+    assert devices[0].manufacturer == "SwitchBot"
+    assert {c for c in devices[0].connections if c[1].upper() == ADDRESS} == {
+        (dr.CONNECTION_BLUETOOTH, ADDRESS),
+        (dr.CONNECTION_NETWORK_MAC, ADDRESS.lower()),
+    }
+
+
+async def test_an_entity_keeps_working_after_its_entity_id_is_changed(hass, ble_env) -> None:
+    """Renaming a cover in the registry moves its state and it still follows new data."""
+    entry = _new_entry(hass)
+    await _setup_timed(hass, entry)
+    with _parsed(ble_env, position=40, battery=88, inMotion=False):
+        entry.runtime_data._async_handle_bluetooth_event(  # noqa: SLF001
+            _advertisement(ble_env), BluetoothChange.ADVERTISEMENT
+        )
+        await hass.async_block_till_done()
+    old_id = next(v for v in _entities(hass, entry).values() if v.startswith("cover."))
+
+    er.async_get(hass).async_update_entity(old_id, new_entity_id="cover.renamed_curtain")
+    await hass.async_block_till_done()
+    assert hass.states.get(old_id) is None
+    assert hass.states.get("cover.renamed_curtain").attributes["current_position"] == 40
+
+    with _parsed(ble_env, position=75, battery=88, inMotion=False):
+        entry.runtime_data._async_handle_bluetooth_event(  # noqa: SLF001
+            _advertisement(ble_env), BluetoothChange.ADVERTISEMENT
+        )
+        await hass.async_block_till_done()
+    assert hass.states.get("cover.renamed_curtain").attributes["current_position"] == 75
+
+
 async def test_entities_that_depend_on_data_appear_when_the_first_advertisement_arrives(
     hass, ble_env
 ) -> None:
@@ -314,7 +349,7 @@ async def test_late_entities_are_added_once_even_if_more_advertisements_follow(h
     await _setup_timed(hass, entry)
     coordinator = entry.runtime_data
 
-    with _parsed(ble_env, position=40, battery=88):
+    with _parsed(ble_env, position=40, battery=88, inMotion=False):
         for _ in range(3):
             coordinator._async_handle_bluetooth_event(  # noqa: SLF001
                 _advertisement(ble_env), BluetoothChange.ADVERTISEMENT

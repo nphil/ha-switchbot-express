@@ -210,10 +210,13 @@ own those, use core's integration instead of this one.
 The connection policy — linger, hold, prewarm, the battery threshold, the
 backoff sequence and the drop window — lives in
 `custom_components/switchbot/policy.py` with no Home Assistant, bleak or
-pySwitchbot imports, and is tested on its own:
+pySwitchbot imports, and is tested on its own. The rest of the suite runs against real
+Home Assistant with the `pytest-homeassistant` package (versioned like Home Assistant;
+CI runs it against stable and beta every week):
 
 ```bash
-python3 -m pytest tests
+pip install "pytest-homeassistant[bluetooth]" "PySwitchbot>=2.9.0"
+python3 -m pytest
 ```
 
 `custom_components/switchbot/device.py` is the only file that touches
